@@ -6,6 +6,10 @@ module EverydayCmd
         @parent       = parent
         @command      = command
         @global       = global
+
+        @global.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @global.helpers[hn]) }
+        @parent.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @parent.helpers[hn]) }
+        @command.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @command.helpers[hn]) }
       end
 
       def call_command(orig_name_chain, *args)
@@ -21,19 +25,9 @@ module EverydayCmd
           puts "Command #{start.name_chain.join(' ')} #{orig_name_chain[0..(-name_chain.count)].map(&:to_s).join(' ')} #{cn} does not exist!"
           exit 1
         else
-          c.body.bind(self).call(*args)
-        end
-      end
-
-      def method_missing(meth, *args, &block)
-        if @command.helpers.has_key?(meth)
-          @command.helpers[meth].bind(self).call(*args, &block)
-        elsif @parent.helpers.has_key?(meth)
-          @parent.helpers[meth].bind(self).call(*args, &block)
-        elsif @global.helpers.has_key?(meth)
-          @global.helpers[meth].bind(self).call(*args, &block)
-        else
-          super
+          # c.body.bind(self).call(*args)
+          re = EverydayCmd::BuilderBuildItems::RuntimeEnv.new(@root_command, c.parent, c, @global)
+          re.instance_exec(*args, &c.body)
         end
       end
     end
@@ -168,7 +162,7 @@ module EverydayCmd
       end
 
       def [](name)
-        @wrapped_command[name]
+        self.commands.has_key?(name) ? self.commands[name] : @wrapped_command[name]
       end
 
       def []=(name, obj)
@@ -290,7 +284,7 @@ module EverydayCmd
       end
 
       def commands
-        { :help => nil, **@wrapped_list.commands }
+        { :help => nil, ** @wrapped_list.commands }
       end
 
       def [](name)
@@ -320,7 +314,7 @@ module EverydayCmd
       end
 
       def has_key?(name)
-        @wrapped_list.has_key?(name)
+        name.to_sym == :help || @wrapped_list.has_key?(name)
       end
 
       def delete(name)
@@ -362,7 +356,7 @@ module EverydayCmd
         exit 1
       else
         env = EverydayCmd::BuilderBuildItems::RuntimeEnv.new(@root_command, c.parent, c, global)
-        c.body.bind(env).call(*args)
+        env.instance_exec(*args, &c.body)
       end
     end
   end
