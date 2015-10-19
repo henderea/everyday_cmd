@@ -8,7 +8,7 @@ module EverydayCmd
         @global       = global
 
         @global.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @global.helpers[hn]) }
-        @parent.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @parent.helpers[hn]) }
+        @parent.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @parent.helpers[hn]) } unless @parent.nil?
         @command.helpers.helpers.keys.each { |hn| self.define_singleton_method(hn.to_sym, @command.helpers[hn]) }
       end
 
@@ -118,7 +118,7 @@ module EverydayCmd
       end
 
       def name_chain
-        (self.parent.nil? ? [] : self.parent.name_chain) + [self.name.to_s]
+        self.parent.nil? ? [$0] : (self.parent.name_chain + [self.name.to_s])
       end
 
       def parent
@@ -290,16 +290,17 @@ module EverydayCmd
       def [](name)
         if name.to_sym == :help
           EverydayCmd::BuilderBuildItems::BuilderCommand.new(@parent_context, short_desc: 'help [command_name]', desc: 'show help on this command or a child') { |name = nil|
+            name = nil if name && !@parent.commands.has_key?(name)
             if name && @parent.commands.has_key?(name) && @parent.commands[name].leaf?
               puts "display full help for #{@parent.name_chain.join(' ')} #{name}"
             elsif name
               call_command([name, :help])
             else
               ml = @parent.commands.map { |_, c|
-                "#{@parent.name_chain.join(' ')} #{name} #{c.options[:short_desc]}".length
+                "#{@parent.name_chain.join(' ')} #{name ? "#{name} " : ''}#{c.options[:short_desc]}".length
               }.max
               @parent.commands.each { |_, c|
-                "#{"#{@parent.name_chain.join(' ')} #{name} #{c.options[:short_desc]}".ljust(ml)}    #{c.options[:desc]}"
+                puts "#{"#{@parent.name_chain.join(' ')} #{name ? "#{name} " : ''}#{c.options[:short_desc]}".ljust(ml)}    #{c.options[:desc]}"
               }
             end
           }
@@ -339,15 +340,16 @@ module EverydayCmd
   end
   class Runner
     def initialize(root_command, global)
-      @root_command = EverydayCmd::BuilderBuildItems::BuilderCommandContext.new(nil, 'cmd', root_command)
+      @root_command = EverydayCmd::BuilderBuildItems::BuilderCommandContext.new(nil, '^', root_command)
       @global       = global
     end
 
     def run(orig_args)
       args = orig_args.clone
+      args = ['help'] if args.nil? || args.empty?
       c    = @root_command
       cn   = nil
-      until c.nil? || c.leaf? || args.empty?
+      until c.nil? || args.empty? || (c.leaf? && args[0] != 'help')
         cn = args.shift
         c  = c[cn]
       end
